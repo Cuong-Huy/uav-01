@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Risk Dashboard - Production Version</title>
+
+    <link href="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.js"></script>
+    <script src="https://unpkg.com/pmtiles@3.2.0/dist/pmtiles.js"></script>
+
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            /* Ngăn chặn thanh cuộn tổng của trang */
+            font-family: Arial, sans-serif;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            /* Đảm bảo bản đồ luôn full height */
+        }
+
+
+        /* ================= CONTROL BOXES (Style & Fly To) ================= */
+        .control-box {
+            position: absolute;
+            left: 15px;
+            /* Canh lề trái 15px cho tất cả */
+            background: white;
+            padding: 8px 10px;
+            border-radius: 4px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+            z-index: 2;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 180px;
+            min-width: 120px;
+        }
+
+        .control-box select {
+            padding: 4px 6px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 12px;
+            outline: none;
+            cursor: pointer;
+            /* min-width: 150px; */
+            width: 120px;
+            /* Tăng độ rộng select lên 1 chút cho chữ dài */
+        }
+
+        .control-box select:focus {
+            border-color: #4285F4;
+        }
+
+        /* Vị trí dọc cho các bảng thẳng hàng */
+        #style-container {
+            top: 15px;
+        }
+
+        #fly-to-container {
+            top: 60px;
+        }
+
+        /* Đã bỏ canh giữa, tự động ăn theo left:15px của .control-box */
+
+        /* ================= LEGEND & LAYER LEGEND ================= */
+        #legend,
+        #layer-legend {
+            position: absolute;
+            left: 15px;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+            z-index: 2;
+            min-width: 120px;
+            width: max-content;
+        }
+
+        #legend {
+            top: 105px;
+        }
+
+        #layer-legend {
+            top: 225px;
+            max-height: calc(100vh - 240px);
+            overflow-y: auto;
+        }
+
+        .legend-title,
+        .layer-legend-title {
+            font-weight: 500;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .legend-item {
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 2px;
+            transition: 0.2s;
+        }
+
+        .legend-item:hover {
+            background: #f3f3f3;
+        }
+
+        .legend-item.active {
+            background: #eaeaea;
+            font-weight: 600;
+        }
+
+        .legend-left {
+            display: flex;
+            align-items: center;
+        }
+
+        .color-box {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+            margin-right: 6px;
+        }
+
+        #opacity-control {
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 3;
+
+            background: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        #opacity-slider {
+            width: 260px;
+        }
+
+        /* ================= PANEL INFO ================= */
+        #panel {
+            position: absolute;
+            right: 0;
+            top: 0;
+            width: 360px;
+            height: 100%;
+            background: white;
+            padding: 22px;
+            line-height: 1.6;
+            box-shadow: -5px 0 20px rgba(0, 0, 0, 0.15);
+            overflow-y: auto;
+            transform: translateX(100%);
+            transition: 0.3s;
+            z-index: 2;
+        }
+
+        #panel.active {
+            transform: translateX(0);
+        }
+
+        .panel-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 15px;
+        }
+
+        .info-group {
+            margin-bottom: 14px;
+        }
+
+        .info-group b {
+            display: block;
+            margin-bottom: 4px;
+            color: #444;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+            color: white;
+            font-size: 12px;
+        }
+
+        /* ================= POPUP ================= */
+        .maplibregl-popup-content {
+            font-family: Arial, sans-serif;
+            font-size: 13px;
+            line-height: 1.6;
+            padding: 10px 14px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        /* ================= LIGHTBOX (PHÓNG TO ẢNH) ================= */
+        #lightbox {
+            display: none;
+            /* Mặc định ẩn */
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            /* Nền đen trong suốt */
+            align-items: center;
+            justify-content: center;
+        }
+
+        #lightbox.active {
+            display: flex;
+            /* Hiển thị khi có class active */
+        }
+
+        #lightbox img {
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            user-select: none;
+        }
+
+        .lightbox-close {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            color: white;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .lightbox-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            color: white;
+            font-size: 50px;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 20px;
+            user-select: none;
+            transition: 0.2s;
+        }
+
+        .lightbox-prev {
+            left: 20px;
+        }
+
+        .lightbox-next {
+            right: 20px;
+        }
+
+        .lightbox-nav:hover,
+        .lightbox-close:hover {
+            color: #ccc;
+        }
+
+
+
+        /* Ẩn mũi tên điều hướng nếu chỉ có 1 ảnh */
+        #legend,
+        #fly-to-container {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="opacity-control">
+        <input id="opacity-slider" type="range" min="0" max="1" step="0.01" value="1">
+    </div>
+
+    <div id="style-container" class="control-box">
+        <label for="style-select" style="font-weight: 600;">Map Style</label>
+        <select id="style-select">
+            <option value="https://tiles.openfreemap.org/styles/liberty" selected>Standard</option>
+            <option value="https://tiles.openfreemap.org/styles/positron">Positron</option>
+            <option value="https://tiles.openfreemap.org/styles/bright">Bright</option>
+            <option value="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json">Dark</option>
+            <option value="osm-raster">Raster</option>
+            <option value="satellite">Satellite</option>
+            <option value="blank">Blank</option>
+        </select>
+    </div>
+
+    <div id="fly-to-container" class="control-box">
+        <label for="fly-to-select" style="font-weight: 600;">Fly to </label>
+        <select id="fly-to-select">
+            <option value="">-- Chọn Ga --</option>
+        </select>
+    </div>
+
+
+
+    <div id="map"></div>
+    <div id="legend"></div>
+    <div id="layer-legend"></div>
+    <div id="panel">
+        <div class="panel-title">Thông tin chi tiết</div>
+        <div id="panel-content">Click vào một căn nhà</div>
+    </div>
+
+
+    <div id="lightbox">
+        <span class="lightbox-close" onclick="closeLightbox()">&times;</span>
+        <span class="lightbox-nav lightbox-prev" onclick="changeLightboxImage(-1)">&#10094;</span>
+        <img id="lightbox-img" src="" alt="Phóng to">
+        <span class="lightbox-nav lightbox-next" onclick="changeLightboxImage(1)">&#10095;</span>
+    </div>
+
+    <script>
+        /* ================= CONFIG ================= */
+        const riskColors = {
+            "Thấp": "#FFD700",
+            "Trung bình": "#FFA500",
+            "Cao": "#FF0000"
+        };
+
+        /* ================= PMTILES INIT ================= */
+
+        const protocol = new pmtiles.Protocol();
+        maplibregl.addProtocol("pmtiles", protocol.tile);
+
+        // const PMTILES_URL = "metro2-3857.pmtiles";
+        const PMTILES_URL = "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/optimized_z21.pmtiles";
+
+
+        const pmtilesArchive = new pmtiles.PMTiles(PMTILES_URL);
+        protocol.add(pmtilesArchive);
+
+        // Cấu hình các lớp geojson bổ sung (Dữ liệu bạn cung cấp)
+        const extraLayers = [
+            { id: "layer-row", name: "Ranh Giới", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/ranh-gioi.geojson", color: "#00ff00", width: 4 },
+            { id: "layer-alignment", name: "Tìm Đường", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/tim-duong.geojson", color: "#0000ff", width: 3 },
+            { id: "layer-traffic", name: "Đường Nhựa", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/duong-nhua.geojson", color: "#FF0000", width: 2 },
+            { id: "layer-07h", name: "Đường Bê Tông", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/duong-be-tong.geojson", color: "#00FFFF", width: 2 }
+        ];
+
+        let activeFilters = ["Thấp", "Trung bình", "Cao"];
+        // THÊM DÒNG NÀY: Mặc định bật tất cả các extraLayers
+        // Thay đổi: Chỉ bật 4 layers theo yêu cầu khi load ban đầu
+        let activeLayers = ["layer-row", "layer-structure", "layer-alignment", "layer-depot"];
+        let hoveredId = null;
+        let selectedId = null;
+        let legendBuilt = false;
+        let layerTogglesBuilt = false;
+
+        /* ================= MAP ================= */
+        /* ================= MAP ================= */
+        const map = new maplibregl.Map({
+            container: 'map',
+            style: {
+                "version": 8,
+                "sources": {
+                    "esri-satellite": {
+                        "type": "raster",
+                        "tiles": [
+                            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                        ],
+                        "tileSize": 256,
+                        "maxzoom": 16
+                    }
+                },
+                "layers": [
+                    {
+                        "id": "satellite",
+                        "type": "raster",
+                        "source": "esri-satellite"
+                    }
+                ]
+            },
+            center: [107.07354, 11.04499],
+            zoom: 16,
+            maxZoom: 23,
+            pitch: 30
+        });
+
+        /* ================= FLY TO DATA & LOGIC ================= */
+        // Chuyển đổi dữ liệu bảng thành mảng object
+        const stationsData = [
+            { id: 1, code: 'SBT', name: 'Bến Thành', lat: 10.771282, lng: 106.6955696, zoom: 17.2 },
+            { id: 2, code: 'STD', name: 'Tao Đàn', lat: 10.77332973, lng: 106.6902253, zoom: 17.6 },
+            { id: 3, code: 'SDC', name: 'Dân Chủ', lat: 10.77785405, lng: 106.6816465, zoom: 17.5 },
+            { id: 4, code: 'SHH', name: 'Hòa Hưng', lat: 10.78230184, lng: 106.6734981, zoom: 18 },
+            { id: 5, code: 'STR', name: 'Lê Thị Riêng', lat: 10.78620752, lng: 106.665528, zoom: 17.8 },
+            { id: 6, code: 'SVH', name: 'Phạm Văn Hai', lat: 10.78963019, lng: 106.6595401, zoom: 18 },
+            { id: 7, code: 'SBH', name: 'Bảy Hiền', lat: 10.79291968, lng: 106.6533926, zoom: 18 },
+            { id: 8, code: 'SHD', name: 'Nguyễn Hồng Đào', lat: 10.79839947, lng: 106.6430777, zoom: 17.8 },
+            { id: 9, code: 'SBQ', name: 'Bà Quẹo', lat: 10.80603984, lng: 106.6350955, zoom: 17.5 },
+            { id: 10, code: 'SVB', name: 'Phạm Văn Bạch', lat: 10.81430176, lng: 106.6325637, zoom: 17.5 },
+            { id: 11, code: 'STB', name: 'Tân Bình', lat: 10.82164237, lng: 106.6303212, zoom: 18 },
+            { id: 12, code: 'STL', name: 'Tham Lương', lat: 10.8211975, lng: 106.618196, zoom: 16.5 }
+        ];
+
+        const flyToSelect = document.getElementById('fly-to-select');
+
+        // Đổ dữ liệu vào thẻ select
+        stationsData.forEach(station => {
+            const option = document.createElement('option');
+            option.value = station.id;
+            option.textContent = station.name;
+            flyToSelect.appendChild(option);
+        });
+
+        // Bắt sự kiện khi người dùng chọn một trạm
+        flyToSelect.addEventListener('change', (e) => {
+            const selectedId = parseInt(e.target.value);
+            if (!selectedId) return; // Bỏ qua nếu chọn "-- Chọn trạm --"
+
+            // Tìm trạm tương ứng trong mảng dữ liệu
+            const targetStation = stationsData.find(st => st.id === selectedId);
+
+            if (targetStation) {
+                // Thực hiện lệnh flyTo. Lưu ý: MapLibre dùng [Kinh độ, Vĩ độ] (Longitude, Latitude)
+                map.flyTo({
+                    center: [targetStation.lng, targetStation.lat],
+                    zoom: targetStation.zoom,
+                    speed: 1.2, // Tốc độ bay (có thể chỉnh sửa)
+                    curve: 1.42, // Độ cong đường bay (có thể chỉnh sửa)
+                    essential: true
+                });
+            }
+        });
+
+        /* CHUYỂN STYLE (BASEMAP) */
+        const styleSelect = document.getElementById('style-select');
+        styleSelect.addEventListener('change', (e) => {
+            const styleValue = e.target.value;
+
+            if (styleValue === 'satellite') {
+                map.setStyle({
+                    "version": 8,
+                    "sources": {
+                        "esri-satellite": {
+                            "type": "raster",
+                            "tiles": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+                            "tileSize": 256,
+                            "maxzoom": 18
+                        }
+                    },
+                    "layers": [{
+                        "id": "satellite",
+                        "type": "raster",
+                        "source": "esri-satellite"
+                    }]
+                });
+            } else if (styleValue === 'blank') {
+                map.setStyle({
+                    "version": 8,
+                    "sources": {},
+                    "layers": [{
+                        "id": "background",
+                        "type": "background",
+                        "paint": {
+                            "background-color": "#ffffff"
+                        }
+                    }]
+                });
+            } else if (styleValue === 'osm-raster') {
+                // BỔ SUNG ĐOẠN NÀY
+                map.setStyle({
+                    'version': 8,
+                    'name': 'Raster tiles',
+                    'sources': {
+                        'raster-tiles': {
+                            'type': 'raster',
+                            'tiles': ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                            'tileSize': 256,
+                            'minzoom': 0,
+                            'maxzoom': 22
+                        }
+                    },
+                    'layers': [{
+                        'id': 'osm-tiles-layer',
+                        'type': 'raster',
+                        'source': 'raster-tiles',
+                        'minzoom': 0,
+                        'maxzoom': 22
+                    }]
+                });
+            } else {
+                map.setStyle(styleValue);
+            }
+        });
+
+        map.on('style.load', () => {
+            /* ================= PMTILES FLYCAM ================= */
+
+            if (!map.getSource('flycam-source')) {
+                map.addSource('flycam-source', {
+                    type: 'raster',
+                    url: `pmtiles://${PMTILES_URL}`,
+                    tileSize: 256,
+                    minzoom: 10,
+                    maxzoom: 21
+                });
+            }
+
+            if (!map.getLayer('flycam-layer')) {
+                map.addLayer({
+                    id: 'flycam-layer',
+                    type: 'raster',
+                    source: 'flycam-source',
+                    paint: {
+                        'raster-resampling': 'linear',
+                        'raster-opacity': 1
+                    }
+                });
+            }
+            // 1. Render các lớp geojson bổ sung TRƯỚC lớp Houses để Houses không bị đè mất click
+            extraLayers.forEach(layer => {
+                if (!map.getSource(layer.id)) {
+                    map.addSource(layer.id, { type: 'geojson', data: layer.url });
+                }
+
+                // THAY ĐỔI ĐOẠN NÀY: Dùng mảng activeLayers thay vì kiểm tra checkbox
+                const isVisible = activeLayers.includes(layer.id) ? 'visible' : 'none';
+
+                if (!map.getLayer(layer.id)) {
+                    map.addLayer({
+                        id: layer.id,
+                        type: 'line',
+                        source: layer.id,
+                        layout: {
+                            'visibility': isVisible,
+                            'line-join': 'round',
+                            'line-cap': 'round'
+                        },
+                        paint: {
+                            'line-color': layer.color,
+                            'line-width': layer.width
+                        }
+                    });
+                }
+            });
+
+            // 2. Lớp Houses
+            if (!map.getSource('houses')) {
+                map.addSource('houses', {
+                    type: 'geojson',
+                    data: 'https://raw.githubusercontent.com/Cuong-Huy/geojson-demo/main/11_map_data_demo_full.geojson',
+                    promoteId: 'id'
+                });
+            }
+
+            if (!map.getLayer('houses')) {
+                map.addLayer({
+                    id: 'houses',
+                    type: 'fill',
+                    source: 'houses',
+                    paint: {
+                        'fill-color': [
+                            'match', ['get', 'risk_level'],
+                            'Thấp', riskColors["Thấp"],
+                            'Trung bình', riskColors["Trung bình"],
+                            'Cao', riskColors["Cao"],
+                            '#ccc'
+                        ],
+                        'fill-opacity': [
+                            'case',
+                            ['boolean', ['feature-state', 'selected'], false], 1,
+                            ['boolean', ['feature-state', 'hover'], false], 0.85,
+                            0.7
+                        ]
+                    }
+                });
+            }
+
+            if (!map.getLayer('houses-outline')) {
+                map.addLayer({
+                    id: 'houses-outline',
+                    type: 'line',
+                    source: 'houses',
+                    paint: { 'line-color': '#000', 'line-width': 1 }
+                });
+            }
+
+            applyCurrentFilters();
+
+            if (!legendBuilt) { buildLegend(); legendBuilt = true; }
+            if (!layerTogglesBuilt) { buildLayerToggles(); layerTogglesBuilt = true; }
+        });
+
+        const opacitySlider = document.getElementById("opacity-slider");
+
+        opacitySlider.addEventListener("input", function () {
+
+            const value = parseFloat(this.value);
+
+            if (map.getLayer("flycam-layer")) {
+                map.setPaintProperty(
+                    "flycam-layer",
+                    "raster-opacity",
+                    value
+                );
+            }
+
+        });
+
+        map.on('idle', updateStats);
+
+        /* ================= BUILD LAYER TOGGLES ================= */
+        /* ================= BUILD LAYER LEGEND (MỚI) ================= */
+        function buildLayerToggles() {
+            const container = document.getElementById('layer-legend');
+            container.innerHTML = '<div class="layer-legend-title">Các lớp (Layers)</div>';
+
+            extraLayers.forEach(layer => {
+                const div = document.createElement('div');
+                // Kiểm tra xem layer này có trong danh sách activeLayers (4 layer ban đầu) không
+                const isActive = activeLayers.includes(layer.id);
+                div.className = `legend-item ${isActive ? 'active' : ''}`;
+
+                div.innerHTML = `
+            <div class="legend-left">
+                <div class="color-box" style="background:${layer.color}"></div>
+                ${layer.name}
+            </div>
+        `;
+
+                div.onclick = () => {
+                    const isCurrentlyActive = activeLayers.includes(layer.id);
+
+                    if (isCurrentlyActive) {
+                        activeLayers = activeLayers.filter(id => id !== layer.id);
+                        div.classList.remove('active');
+                        if (map.getLayer(layer.id)) map.setLayoutProperty(layer.id, 'visibility', 'none');
+                    } else {
+                        activeLayers.push(layer.id);
+                        div.classList.add('active');
+                        if (map.getLayer(layer.id)) map.setLayoutProperty(layer.id, 'visibility', 'visible');
+                    }
+                };
+
+                container.appendChild(div);
+            });
+        }
+
+        /* ================= FILTER LOGIC ================= */
+        function applyCurrentFilters() {
+            if (activeFilters.length === 0) {
+                map.setFilter('houses', ['==', 'risk_level', 'NONE']);
+                if (map.getLayer('houses-outline')) map.setFilter('houses-outline', ['==', 'risk_level', 'NONE']);
+            } else {
+                const filterRule = ['in', ['get', 'risk_level'], ['literal', activeFilters]];
+                map.setFilter('houses', filterRule);
+                if (map.getLayer('houses-outline')) map.setFilter('houses-outline', filterRule);
+            }
+        }
+
+        /* ================= LEGEND ================= */
+        function buildLegend() {
+            const legend = document.getElementById('legend');
+            legend.innerHTML = '<div class="legend-title">Risk level</div>';
+
+            Object.keys(riskColors).forEach(risk => {
+                const div = document.createElement('div');
+                div.className = 'legend-item active';
+                div.dataset.risk = risk;
+
+                div.innerHTML = `
+            <div class="legend-left">
+                <div class="color-box" style="background:${riskColors[risk]}"></div>
+                ${risk}
+            </div>
+            <span id="count-${risk}">0</span>
+        `;
+
+                div.onclick = () => {
+                    if (activeFilters.includes(risk)) {
+                        activeFilters = activeFilters.filter(r => r !== risk);
+                        div.classList.remove('active');
+                    } else {
+                        activeFilters.push(risk);
+                        div.classList.add('active');
+                    }
+                    applyCurrentFilters();
+                    animateFilter();
+                    updateStats();
+                };
+                legend.appendChild(div);
+            });
+        }
+
+        /* ================= STATS ================= */
+        function updateStats() {
+            const features = map.queryRenderedFeatures({ layers: ['houses'] });
+            const counts = { "Thấp": 0, "Trung bình": 0, "Cao": 0 };
+
+            features.forEach(f => { counts[f.properties.risk_level]++; });
+            Object.keys(counts).forEach(r => {
+                const el = document.getElementById(`count-${r}`);
+                if (el) el.innerText = counts[r];
+            });
+        }
+
+        /* ================= HOVER & POPUP ================= */
+        const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+
+        map.on('mousemove', 'houses', (e) => {
+            map.getCanvas().style.cursor = 'pointer';
+            if (e.features.length > 0) {
+                if (hoveredId !== null) { map.setFeatureState({ source: 'houses', id: hoveredId }, { hover: false }); }
+                hoveredId = e.features[0].id;
+                map.setFeatureState({ source: 'houses', id: hoveredId }, { hover: true });
+
+                const props = e.features[0].properties;
+                popup.setLngLat(e.lngLat)
+                    .setHTML(`
+                <b>ID:</b> ${props.id || hoveredId}<br>
+                <b>Khoảng cách mép:</b> ${props.dist_to_edge} m<br>
+                <b>Kết cấu:</b> ${props.structure_type}<br>
+                <b>Mức rủi ro:</b> ${props.risk_level}
+            `).addTo(map);
+            }
+        });
+
+        map.on('mouseleave', 'houses', () => {
+            map.getCanvas().style.cursor = '';
+            if (hoveredId !== null) { map.setFeatureState({ source: 'houses', id: hoveredId }, { hover: false }); }
+            hoveredId = null;
+            popup.remove();
+        });
+
+        /* ================= CLICK SELECT ================= */
+        map.on('click', 'houses', (e) => {
+            const id = e.features[0].id;
+            if (selectedId !== null) { map.setFeatureState({ source: 'houses', id: selectedId }, { selected: false }); }
+            selectedId = id;
+            map.setFeatureState({ source: 'houses', id: id }, { selected: true });
+            showPanel(e.features[0].properties);
+        });
+
+        map.on('click', (e) => {
+            const features = map.queryRenderedFeatures(e.point, { layers: ['houses'] });
+            if (!features.length) {
+                if (selectedId !== null) { map.setFeatureState({ source: 'houses', id: selectedId }, { selected: false }); }
+                selectedId = null;
+                document.getElementById('panel').classList.remove('active');
+            }
+        });
+
+        /* ================= LIGHTBOX LOGIC ================= */
+        let currentImages = []; // Mảng lưu các hình ảnh hiện tại
+        let currentImageIndex = 0; // Vị trí ảnh đang xem
+
+        function openLightbox(index) {
+            currentImageIndex = index;
+            document.getElementById('lightbox-img').src = currentImages[currentImageIndex];
+            document.getElementById('lightbox').classList.add('active');
+        }
+
+        function closeLightbox() {
+            document.getElementById('lightbox').classList.remove('active');
+        }
+
+        function changeLightboxImage(step) {
+            currentImageIndex += step;
+
+            // Xử lý xoay vòng (qua lại giữa ảnh cuối và ảnh đầu)
+            if (currentImageIndex >= currentImages.length) {
+                currentImageIndex = 0;
+            } else if (currentImageIndex < 0) {
+                currentImageIndex = currentImages.length - 1;
+            }
+
+            document.getElementById('lightbox-img').src = currentImages[currentImageIndex];
+        }
+
+        /* ================= PANEL ================= */
+        function showPanel(p) {
+            const badgeColor = riskColors[p.risk_level] || "#ccc";
+
+            const houseId = p.id || "demo";
+            // Đổ link ảnh vào mảng toàn cục để Lightbox có thể đọc được.
+            // Dùng ảnh độ phân giải 800x600 để khi phóng to xem cho nét.
+            currentImages = [
+                `https://picsum.photos/seed/${houseId}-1/1200/900`,
+                `https://picsum.photos/seed/${houseId}-2/1200/900`,
+                `https://picsum.photos/seed/${houseId}-3/1200/900`,
+                `https://picsum.photos/seed/${houseId}-4/1200/900`
+            ];
+
+            document.getElementById('panel-content').innerHTML = `
+        <div class="info-group"><b>ID</b> ${p.id}</div>
+        
+        <div class="info-group">
+            <b>Thông số hình học</b>
+            Area: ${Number(p.Area).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} m²<br>
+            Khoảng cách mép: ${p.dist_to_edge} m
+        </div>
+
+        <div class="info-group">
+            <b>Kết cấu</b>
+            Số tầng: ${p.num_floors} | Kết cấu: ${p.structure_type}<br>
+            Móng: ${p.foundation_type} | Năm xây: ${p.build_year}
+        </div>
+
+        <div class="info-group">
+            <b>Mức rủi ro</b>
+            <span class="badge" style="background:${badgeColor}">${p.risk_level}</span>
+        </div>
+
+        <div class="info-group">
+            <b>Chủ nhà</b> 
+            ${p.owner_name}<br>
+            <span style="color: #4285F4;">${p.owner_phone}</span>
+        </div>
+        
+        <div class="info-group"><b>Hiện trạng:</b> ${p.current_status}</div>
+
+        <div class="info-group" style="margin-top: 20px;">
+            <b>Hình ảnh hiện trạng</b>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;">
+                ${currentImages.map((url, index) => `
+                    <img src="${url}" 
+                         onclick="openLightbox(${index})"
+                         style="width: 100%; height: 100px; object-fit: cover; border-radius: 6px; border: 1px solid #ccc; cursor: pointer; transition: 0.2s;" 
+                         onmouseover="this.style.opacity=0.8" 
+                         onmouseout="this.style.opacity=1"
+                         onerror="this.src='https://via.placeholder.com/320x240?text=No+Image'">
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+            document.getElementById('panel').classList.add('active');
+        }
+
+        /* ================= ANIMATION ================= */
+        function animateFilter() {
+            if (!map.getLayer('houses')) return;
+            map.setPaintProperty('houses', 'fill-opacity', 0);
+            setTimeout(() => {
+                map.setPaintProperty('houses', 'fill-opacity', [
+                    'case',
+                    ['boolean', ['feature-state', 'selected'], false], 1,
+                    ['boolean', ['feature-state', 'hover'], false], 0.85,
+                    0.7
+                ]);
+            }, 120);
+        }
+
+    </script>
+</body>
+
+</html>
