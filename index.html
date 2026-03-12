@@ -95,7 +95,8 @@
         }
 
         #layer-legend {
-            top: 225px;
+            /* top: 225px; */
+            top: 64px;
             max-height: calc(100vh - 240px);
             overflow-y: auto;
         }
@@ -281,9 +282,10 @@
 
 
 
-        /* Ẩn mũi tên điều hướng nếu chỉ có 1 ảnh */
+        /* Ẩn mũi tên điều hướng nếu chỉ có 1 ảnh*/
         #legend,
-        #fly-to-container {
+        #fly-to-container,
+        #panel {
             display: none;
         }
     </style>
@@ -354,16 +356,17 @@
 
         // Cấu hình các lớp geojson bổ sung (Dữ liệu bạn cung cấp)
         const extraLayers = [
-            { id: "layer-row", name: "Ranh Giới", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/ranh-gioi.geojson", color: "#00ff00", width: 4 },
-            { id: "layer-alignment", name: "Tìm Đường", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/tim-duong.geojson", color: "#0000ff", width: 3 },
-            { id: "layer-traffic", name: "Đường Nhựa", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/duong-nhua.geojson", color: "#FF0000", width: 2 },
-            { id: "layer-07h", name: "Đường Bê Tông", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/duong-be-tong.geojson", color: "#00FFFF", width: 2 }
+            { id: "layer-01", name: "Ranh Giới", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/ranh-gioi.geojson", color: "#00ff00", width: 4 },
+            { id: "layer-02", name: "Tìm Đường", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/tim-duong.geojson", color: "#0000ff", width: 3 },
+            { id: "layer-03", name: "Đường Nhựa", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/duong-nhua.geojson", color: "#FF0000", width: 2 },
+            { id: "layer-04", name: "Đường Bê Tông", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/duong-be-tong.geojson", color: "#00FFFF", width: 2 },
+            { id: "layer-05", name: "Đối tượng khác", url: "https://pub-9af05f308d6f4801af668dc64852b115.r2.dev/doi-tuong-khac_optimized.geojson"}
         ];
 
         let activeFilters = ["Thấp", "Trung bình", "Cao"];
         // THÊM DÒNG NÀY: Mặc định bật tất cả các extraLayers
         // Thay đổi: Chỉ bật 4 layers theo yêu cầu khi load ban đầu
-        let activeLayers = ["layer-row", "layer-structure", "layer-alignment", "layer-depot"];
+        let activeLayers = ["layer-01", "layer-02", "layer-03", "layer-04"];
         let hoveredId = null;
         let selectedId = null;
         let legendBuilt = false;
@@ -537,7 +540,7 @@
                     map.addSource(layer.id, { type: 'geojson', data: layer.url });
                 }
 
-                // THAY ĐỔI ĐOẠN NÀY: Dùng mảng activeLayers thay vì kiểm tra checkbox
+                // Dùng mảng activeLayers thay vì kiểm tra checkbox
                 const isVisible = activeLayers.includes(layer.id) ? 'visible' : 'none';
 
                 if (!map.getLayer(layer.id)) {
@@ -551,8 +554,17 @@
                             'line-cap': 'round'
                         },
                         paint: {
-                            'line-color': layer.color,
-                            'line-width': layer.width
+                            // Ưu tiên layer.color. Nếu không có, tìm 'stroke' trong properties của GeoJSON.
+                            // Lệnh 'coalesce' đảm bảo nếu GeoJSON cũng không có 'stroke', nó sẽ dùng màu xám '#888888'.
+                            'line-color': layer.color 
+                                ? layer.color 
+                                : ['coalesce', ['get', 'stroke'], '#888888'],
+                            
+                            // Ưu tiên layer.width. Nếu không có, tìm 'stroke-width' trong properties của GeoJSON.
+                            // Mặc định dùng lực nét 2 nếu không tìm thấy gì cả.
+                            'line-width': layer.width 
+                                ? layer.width 
+                                : ['coalesce', ['get', 'stroke-width'], 2]
                         }
                     });
                 }
